@@ -18,10 +18,25 @@ library(ggrepel)
 #pivot wider
 library("pheatmap")
 library("paletteer")
-
+library(docstring)
 library("gt")
 
+
 long_to_wide_df <- function(long_df,  Col_to_spread, Col_with_values ) {
+  
+  
+  #' Formats long to wide style data columns. Only works on one pair of "Variable-Data" columns at a time!
+  #'
+  #' @param long_df the input long df
+  #' @param Col_to_spread the col which gets divided into multible new cols 
+  #' @param Col_with_values the col which contains the relevant values
+  #'
+  #' @return 
+  #' @export
+  #'
+  #' @examples long_to_wide_df(data, "Variable", "Measurement")
+  
+  
   #only include colums which together uniquely identify samples per row in combination!!
   
   wide_df <- long_df  %>%
@@ -30,16 +45,85 @@ long_to_wide_df <- function(long_df,  Col_to_spread, Col_with_values ) {
   return(wide_df)
 }
 
-#removes all Na cols forom wide df
+
+
 
 remove_NA_Cols <- function (wide_df) {
+  
+  #' Removes columns which only contain missing values
+  #'
+  #' @param wide_df a df in wide format
+  #' @return 
+  #' @export
+  #'
+  #' @examples
+  
   not_all_na <- function(x) {!all(is.na(x))}
   wide_df <- wide_df  %>% select_if(not_all_na)
   return (wide_df)
 }
 
-#remove 0 variance variables
+
+OptimizeVariableNames <- function(df, dataformat = "long", datastructureinput, list_of_Names = NULL) {
+  
+  #' Removes non ASCII Characters from Variable Col or names of cols or replaces names of cols with given vector
+  #'
+  #' @param df 
+  #' @param dataformat select "long" for cleaning 1 column or "wide" for all names of the df 
+  #' @param datastructureinput the list of Column names which define the datastructure
+ 
+ 
+  #' @param list_of_Names a vector with the same length and order as the current col names of a long df
+  #'
+  #' @return
+  #' @export
+  #'
+  #' @examples 
+  
+
+  Variable = datastructureinput$Variable
+  
+  if (is.null(list_of_Names) == FALSE) {
+    if (len(list_of_Names) != len(names(df))) {
+      print("vector has a different length than there are col names")
+    }
+      
+    names(df) <- list_of_Names
+    return (df)
+  }
+  
+if (dataformat == "long") {
+  df[Variable] <- replace_non_ascii(df[[Variable]])
+  df[Variable] <-gsub("\\s", "",df[[Variable]])
+  df[Variable] <-gsub(",", ".",df[[Variable]])
+  return (df)
+  }
+
+  if (dataformat == "wide") {
+    names(df) <- replace_non_ascii(names(df))
+    names(df) <-gsub("\\s", "",names(df))
+    names(df)<-gsub(",", ".",names(df))
+    return (df)
+  }
+  
+}
+
+
+
+
 RemoveZeroVariance <- function (long_df, datastructureinput = NULL) {
+  
+  
+  #' remove 0 variance variables, can handle 2 variable-columns, adds label, removes variables which are only in 1 cohort. 
+  #'
+  #' @param long_df, unfisnished doc
+  #' @param datastructureinput 
+  #'
+  #' @return
+  #' @export
+  #'
+  #' @examples
+  
   cohort = datastructureinput$cohort
   Variable = datastructureinput$Variable
   Variable2 = datastructureinput$Variable2
@@ -53,13 +137,12 @@ RemoveZeroVariance <- function (long_df, datastructureinput = NULL) {
     prepo_data_long <- long_df
     
     
-    #prepo_data_long <- drop_na(prepo_data_long)
-    
-    prepo_data_long[Variable] <- replace_non_ascii(prepo_data_long[[Variable]])
-    prepo_data_long[Variable] <-gsub("\\s", "",prepo_data_long[[Variable]])
     prepo_data_long$label<- paste0(prepo_data_long[[Variable]],prepo_data_long[[Variable2]])
     
     prepo_data_long[cohort]<- as.factor(prepo_data_long[[cohort]])
+    
+# removes metadata columns..... needs fixing
+    
     
     #only includes features which appear atleast twice
     prepo_data_long <- prepo_data_long %>% dplyr::group_by(label,.data[[cohort]] ) %>%  dplyr::filter(n()>2) %>% ungroup()  
@@ -364,7 +447,7 @@ RemoveMissingData <- function(wide_df, limit = 0.5){
 
 
 #converts data cols to numeric
-ToNumeric <- function(wide_df){
+ToNumeric <- function(wide_df, metadata_columns){
   metadata <- wide_df[metadata_columns]
   matrix <-  wide_df %>% select (-any_of(c(metadata_columns)))
   
@@ -404,7 +487,7 @@ RemoveColswithMissingData <- function(wide_df){
 
 #####
 
-CalculateFoldChange <- function (long_df, groupingCount, datastructureinput) {
+CalculateFoldChange <- function (long_df, groupingCount, datastructureinput, used_stat = "mean") {
   cohort = datastructureinput$cohort
   Variable = datastructureinput$Variable
   Variable2 = datastructureinput$Variable2
@@ -415,7 +498,14 @@ CalculateFoldChange <- function (long_df, groupingCount, datastructureinput) {
   
   
   if (groupingCount == 1) {
+    
+    if (used_stat == "mean") {
     mean_df <- long_df %>% dplyr::group_by(.data[[cohort]], .data[[Variable]] )%>%    dplyr::summarize(Mean= mean(.data[[measured]], na.rm=TRUE))
+    }
+    if (used_stat == "median") {
+    mean_df <- long_df %>% dplyr::group_by(.data[[cohort]], .data[[Variable]] )%>%    dplyr::summarize(Mean= median(.data[[measured]], na.rm=TRUE))
+    }
+    
     #splitting by cohort and joining for calculations
     high_mean <- mean_df %>% dplyr::filter( .data[[cohort]] == firstcohort)%>% dplyr::rename( Firstcohort_mean = Mean)
     low_mean <- mean_df %>% dplyr::filter( .data[[cohort]] == secondcohort)%>% dplyr::rename( Secondcohort_mean = Mean)
@@ -432,8 +522,17 @@ CalculateFoldChange <- function (long_df, groupingCount, datastructureinput) {
     
   }
   if (groupingCount == 2) {
+ 
+    if (used_stat == "mean") {
   mean_df <- long_df %>% dplyr::group_by(.data[[cohort]], .data[[Variable]], .data[[Variable2]]  )%>%    dplyr::summarize(Mean= mean(.data[[measured]], na.rm=TRUE))
-  #splitting by cohort and joining for calculations
+    }
+    
+    if (used_stat == "median") {
+      mean_df <- long_df %>% dplyr::group_by(.data[[cohort]], .data[[Variable]], .data[[Variable2]]  )%>%    dplyr::summarize(Mean= median(.data[[measured]], na.rm=TRUE))
+    }
+    
+    
+   #splitting by cohort and joining for calculations
   high_mean <- mean_df %>% dplyr::filter( .data[[cohort]] == firstcohort)%>% dplyr::rename( Firstcohort_mean = Mean)
   low_mean <- mean_df %>% dplyr::filter( .data[[cohort]] == secondcohort)%>% dplyr::rename( Secondcohort_mean = Mean)
   highandlow <- high_mean %>% left_join( low_mean, by = c(Variable,Variable2 ))
@@ -476,7 +575,8 @@ kruskal_testing <- function (long_df, groupingCount, posthoc, datastructureinput
   colselect <-  filtered_P$rowID
   significant_MCs<-dplyr::filter(long_df,  rowID %in% colselect)
   
-  if (posthoc == TRUE) {
+  if ((posthoc == TRUE) && (nrow(significant_MCs) > 0))  {
+    print("significant differences in Kruskal testing detected!")
     stat.test.adj <-significant_MCs %>%
       group_by(!!sym(Variable)) %>%
       rstatix::dunn_test(as.formula(paste(measured, '~', cohort))) %>%
@@ -508,7 +608,8 @@ kruskal_testing <- function (long_df, groupingCount, posthoc, datastructureinput
     colselect <-  filtered_P$rowID
     significant_MCs<-dplyr::filter(long_df, rowID %in% colselect)
     
-    if (posthoc == TRUE) {
+    if ((posthoc == TRUE) && nrow(significant_MCs) > 0)  {
+      print("significant differences in Kruskal Testing  detected!")
       stat.test.adj <-significant_MCs %>%
         group_by(!!sym(Variable), !!sym(Variable2)) %>%
         rstatix::dunn_test(as.formula(paste(measured, '~', cohort))) %>%
@@ -530,10 +631,18 @@ kruskal_testing <- function (long_df, groupingCount, posthoc, datastructureinput
 
 Students_T_Test <- function (long_df, groupingCount, datastructureinput) {
   
+  
+  
   cohort = datastructureinput$cohort
   Variable = datastructureinput$Variable
   Variable2 = datastructureinput$Variable2
   measured = datastructureinput$measured
+  
+ if (nrow(long_df)==0) {
+   print("no data detected")
+   return(NULL)
+ }
+  
   
   if (groupingCount == 1 ) {
     long_df$rowID <- paste0(long_df[[Variable]])
@@ -561,11 +670,36 @@ return (stat.test)
 
 Sig.For.Plotting <- function (stat.test, scaling_of_plot, filter_of_sig, x, use_posthoc = T, datastructureinput){
   #places significance brackets correctly and filters out nonsign. stats rows. Scaling MUST be identical as plot!
+  
+  dim_df <- stat.test %>% dplyr::filter(p < filter_of_sig)
+  
+  if (nrow(dim_df) == 0 ){
+    print("no significant events detected")
+    return (NULL)
+  }
+  
+  
+  
   stat.test.adj <- stat.test %>% add_xy_position(scales = scaling_of_plot, x = x, 
                                                  dodge = 0.8, fun = "max")  
+
+  
+  
     if (use_posthoc == T){
       stat.test.adj <- stat.test.adj %>% dplyr::filter(p.adj < filter_of_sig) #y.trans = Log2
+      
+      dim_df <- stat.test.adj %>% dplyr::filter(p.adj < filter_of_sig)
+      
+      if (nrow(dim_df) == 0 ){
+        print("no significant events in posthoc test detected")
+        return (NULL)
+      }
+      
+      
     }
+  
+  
+  
   if (use_posthoc == F){
     stat.test.adj <- stat.test.adj %>% dplyr::filter(p < filter_of_sig) #y.trans = Log2
   }
@@ -606,16 +740,47 @@ create_color_mapping <- function(inputDF, datastructure, selection, palette_name
   
 
 
+  
+setPlottingFormat <- function(annotation, ...) {
+    #' set the structure of your plot. Function creates a named list. 
+    #'@param annotation name the list for its function with a str vector
+    #' @param cohort defines what is being plotted on x axis, input equals to column names of long df
+    #' @param Variable defines the facetting parameter
+    #' @param Variable2 defines a subparameter that is being compared on the x axis
+    #' @param Measurement defines the column storing the numeric values 
+    #'
+    #' @return a list object which is fed into plotting functions
+    #' @export
+    #'
+    #' @examples setPlottingFormat(annotation, cohort = "Celltype", Variable = "Variable", Variable2 = "cohort", Measurement = "Measurement")
+    
+  
+      
+      args <- list(...)
+      attr(args, "annotation") <- annotation
+      print(attr(args, "annotation"))
+      
+      
+      return(args)
+    }
+
+
+
 
 
 #plotting functions
 
 #1 boxplot
-Boxplots_simple<- function (long_df,datastructure, stat.test = NULL, group.colors, order = F,  dotplot = T, P_values = T, 
-                            title = "Test", headersize = 10, legendsize = 30, alpha_dots = 0.5, alpha_value = 0.5,  Facetting_by_Variable = T) { 
+Boxplots_simple<- function (long_df,datastructure, stat.test = NULL, group.colors,  dotplot = T, P_values = T, posthoc = F,show_n = F,
+                            title = "Test", headersize = 10, legendsize = 30, alpha_dots = 0.5, alpha_value = 0.5,x_axis_labelsize = 5,  Facetting_by_Variable = T) { 
   #for nice stats labels, rounded and styled
   if (is.null(stat.test) == FALSE) {
-  stat.test$p.adj.ital <-round(stat.test$p.adj, 5)
+    
+    if (posthoc == T) {
+      p_value <- "p.adj"
+    } else{ p_value <- "p"}
+    
+  stat.test$p.adj.ital <-round(stat.test[[p_value]], 5)
   print("using stats data")
   
   }
@@ -625,13 +790,7 @@ Boxplots_simple<- function (long_df,datastructure, stat.test = NULL, group.color
   #data in
   data <-long_df
   data[[cohort]] <- as.factor(data[[cohort]])
-  #set order
-  if (is.null(order) == F) {
-    cohort <- datastructure$cohort
-    data <- data %>%
-      mutate(cohort  = factor(data[[datastructure$cohort]] , levels=order)) %>%ungroup()
-    print(order)
-  }
+ 
   
   #plotting
   p<-ggplot(data, aes(x = .data[[datastructure$cohort]], y = .data[[datastructure$measured]],  fill =.data[[datastructure$Variable2]] ))+#
@@ -656,6 +815,7 @@ Boxplots_simple<- function (long_df,datastructure, stat.test = NULL, group.color
     #theme_minimal()+
     theme(strip.text.x=element_text(size= headersize),  legend.text=element_text(size=legendsize)) +
     theme(axis.title.x=element_blank(),
+         axis.text.x = element_text(size=x_axis_labelsize)
           # axis.text.x=element_blank(),
           #axis.ticks.x=element_blank()
     ) 
@@ -665,7 +825,17 @@ Boxplots_simple<- function (long_df,datastructure, stat.test = NULL, group.color
   }
   
   if (dotplot == T) {
-    p = p + geom_point(position=position_jitterdodge(),alpha = alpha_dots, ,show.legend = F)
+  #  p = p + geom_point(position=position_jitterdodge(),alpha = alpha_dots, ,show.legend = F)
+     # Boxplot width can be adjusted
+      
+     p = p+  geom_jitter(show.legend=FALSE, aes(color=.data[[datastructure$Variable2]]), 
+                  position=position_dodge(width=0.8), 
+                  size=2,
+                  alpha = alpha_dots
+      )
+    
+
+    
   }
   
   
@@ -678,6 +848,30 @@ Boxplots_simple<- function (long_df,datastructure, stat.test = NULL, group.color
                        label = "p = {p.adj.ital}",
                        tip.length = 0)
   }
+  
+  
+  if(show_n == T) {
+   
+     #calculate stats
+    sumstats <- data %>% 
+      
+      group_by(.data[[datastructure$Variable]], 
+               #.data[[datastructure$Variable2]],
+               .data[[datastructure$cohort]]) %>% 
+      get_summary_stats(Measurement, show = c("iqr","mean","median", "n", "q1", "q3"))
+    sumstats$upper_limit <- sumstats$q3+ 1.5 * sumstats$iqr
+    sumstats$lower_limit <- sumstats$q1- 1.5 * sumstats$iqr
+    
+    
+    
+    p <- p + geom_text(data = sumstats, aes(x = .data[[datastructure$cohort]], y =upper_limit+1, color = .data[[datastructure$Variable2]], label = paste0("n:", n)), size= 2,check_overlap = F,
+                       vjust = 0,  position=position_dodge(width=0.8)) 
+    
+    
+    
+    
+  }
+  
   return (p)
 }
 
@@ -760,7 +954,7 @@ Heatmap.simple <- function(input,metadata_columns, breaks = seq(-2, 2, length.ou
   
 
 #calculates VIP scores of LPS_DA and log2fold changes
-VIP_Log2fold <- function (wide_DF_normalised, wide_df_not_normalized = NULL, metadata_columns, datastructure = datastructure, VIPtitle,  VIPmin = 1) {
+VIP_Log2fold <- function (wide_DF_normalised, wide_df_not_normalized = NULL, metadata_columns, datastructure = datastructure, VIPtitle,  VIPmin = 1, used_stat = "mean", ncomp = ncomp,groupingCount = 2) {
   wide_DF_normalised <- wide_DF_normalised
   
   test <- as.matrix(wide_DF_normalised %>% dplyr::select(-c(metadata_columns)))
@@ -769,10 +963,10 @@ VIP_Log2fold <- function (wide_DF_normalised, wide_df_not_normalized = NULL, met
   X <- test
   Y <- as.factor(wide_DF_normalised[[datastructure$cohort]])
   #imputate NAs
-  X <- impute.nipals(X = X, ncomp = 7)
+  X <- impute.nipals(X = X, ncomp = ncomp)
   
   #pca.srbct = pca(X, ncomp = 10, center = TRUE, scale = TRUE) 
-  srbct.splsda <- splsda(X, Y, ncomp = 10) 
+  srbct.splsda <- splsda(X, Y, ncomp = ncomp) 
   
   final.vip <- vip(srbct.splsda)
   
@@ -798,7 +992,7 @@ VIP_Log2fold <- function (wide_DF_normalised, wide_df_not_normalized = NULL, met
   #print(long_df[1:6,])
   
  
-  Log2foldchanges <- CalculateFoldChange ( long_df = long_df, groupingCount = 1, datastructure= datastructure)
+  Log2foldchanges <- CalculateFoldChange ( long_df = long_df, groupingCount = groupingCount, datastructure= datastructure,used_stat)
   
   print(Log2foldchanges[1:5,])
   
@@ -807,22 +1001,24 @@ VIP_Log2fold <- function (wide_DF_normalised, wide_df_not_normalized = NULL, met
   #VIP vs LOG2fold changes as a vlcano plot
 
   
-  p <- ggplot(Log2foldchanges, aes(log2foldchanges, VIP), label = Variable)
+  Log2foldchanges$color_breaks <- cut(Log2foldchanges$log2foldchanges, 
+                                      breaks =  c(-Inf, -0.5, 0.5, Inf),
+                                      labels = c("Low", "Mid", "High"))
   
-  p <- p + geom_point(
-    aes(colour = cut(log2foldchanges, c(-Inf, -0.5, 0.5, Inf))),
-    size = 4) +
-    scale_color_manual(name = "log2foldchanges",
-                       values = c("(-Inf,-0.5]" = "blue",
-                                  "(-0.5,0.5]" = "black",
-                                  "(0.5, Inf]" = "red"),
-                       labels = c( paste("increased in",datastructure$firstcohort), "no change", paste("increased in", datastructure$secondcohort)))+
+  
+  
+  p<- ggplot(Log2foldchanges, aes(log2foldchanges, VIP, color=Log2foldchanges$color_breaks)) +
+    geom_point(size = 4) +
+    scale_color_manual(values = c("Low" = "blue", "Mid" = "grey", "High" = "red"),
+                       name = "Value Range",
+                       breaks = c("Low", "Mid", "High"),
+                       labels = c(paste("increased in",datastructure$firstcohort), "no change", paste("increased in", datastructure$secondcohort))) +
     
     theme_prism(base_size = 11, palette = "candy_bright", base_line_size = 0.5,axis_text_angle = 45, base_family = "sans")+
     theme(panel.grid.minor = element_blank())+
     
-    geom_text_repel(hjust = 0, nudge_x = 0.05, size = 3, data=subset(Log2foldchanges, ((VIP  > 1 )& (log2foldchanges > 0.2 | log2foldchanges < -0.2))),
-                    aes(log2foldchanges ,VIP,label=Variable))+
+    geom_text_repel(hjust = 0.2, nudge_x = 0.75, size = 3, data=subset(Log2foldchanges, ((VIP  > 1 )& (log2foldchanges > 0.2 | log2foldchanges < -0.2))),
+                    aes(log2foldchanges ,VIP,label=Variable, colour = "black"))+
     ggtitle(VIPtitle) +
     expand_limits(y = max(Log2foldchanges$VIP), x = Log2foldchanges$log2foldchanges)
   
@@ -836,7 +1032,7 @@ VIP_Log2fold <- function (wide_DF_normalised, wide_df_not_normalized = NULL, met
 
 #PLot PCA
 
-plot_PCA <- function(input_cluster_2, datastructure, imputation = TRUE, ind.names = F, titlePCA = "PCA", components = c(1:2)) {
+plot_PCA <- function(input_cluster_2, datastructure, metadata_columns,imputation = TRUE, ind.names = F, titlePCA = "PCA", components = c(1:2), ncomp =ncomp) {
   
   test <- as.matrix(input_cluster_2 %>% dplyr::select(-c(metadata_columns)))
   rownames(test) <- input_cluster_2[[datastructure$sampleID]]
@@ -846,9 +1042,9 @@ plot_PCA <- function(input_cluster_2, datastructure, imputation = TRUE, ind.name
   
   if (imputation == T) {
   #imputate NAs
-  X <- impute.nipals(X = X, ncomp = 7)
+  X <- impute.nipals(X = X, ncomp = ncomp)
   }
-  pca.srbct = pca(X, ncomp = 10, center = TRUE, scale = TRUE) 
+  pca.srbct = pca(X, ncomp = ncomp, center = TRUE, scale = TRUE) 
   p <- plot(pca.srbct)
   p2 <- plotIndiv(pca.srbct, group = Y, ind.names = ind.names,
             comp = components,# plot the samples projected
@@ -864,7 +1060,9 @@ plot_PCA <- function(input_cluster_2, datastructure, imputation = TRUE, ind.name
 }
   
 #plot Least partial squares DA
-plot_LPS_DA <- function(input_cluster_2, datastructure, imputation = TRUE, ind.names = F, titlePCA = "PCA", components = c(1:2)) {
+plot_LPS_DA <- function(input_cluster_2, datastructure,metadata_columns, imputation = TRUE, ind.names = F, titlePCA = "PCA", components = c(1:2), ncomp = ncomp) {
+  
+  #datastructure$cohort is the grouping factor
   
   test <- as.matrix(input_cluster_2 %>% dplyr::select(-c(metadata_columns)))
   rownames(test) <- input_cluster_2[[datastructure$sampleID]]
@@ -874,17 +1072,18 @@ plot_LPS_DA <- function(input_cluster_2, datastructure, imputation = TRUE, ind.n
   
   if (imputation == T) {
     #imputate NAs
-    X <- impute.nipals(X = X, ncomp = 7)
+    X <- impute.nipals(X = X, ncomp = ncomp)
   }
-  srbct.splsda <- splsda(X, Y, ncomp = 10)
+  srbct.splsda <- splsda(X, Y, ncomp = ncomp)
   
   p2 <- plotIndiv(srbct.splsda, group = Y, ind.names = ind.names,
                   comp = components,# plot the samples projected
                   legend = TRUE, 
-                  ellipse = TRUE,
-                  #style = 'graphics',
+                  ellipse = T,
+                  style = "ggplot2",
                   title = titlePCA)  # onto the PCA subspace
   
+  ?plotIndiv
   
   plotlist <- list()
   
@@ -903,5 +1102,238 @@ reorder_long_df_factors <- function(long_df, order, datastructure) {
   return(result)
 }
 
+?get_summary_stats
+#calculates sumstats
+
+calculate_Sumstats <- function (long_df,datastructure, grouping_vector, selected_stats = c("ci","mean", "n", "q1", "q3") ) {
+  
+  #' calculatis summary statistics with statix package (?get_summary_stats)
+  #'
+  #' @param long_df a df in long format, filter to selected parameters first
+  #' @param datastructure list with datastructure
+  #' @param grouping_vector vector containing the columns by which the data is getting grouped (values in datastructure)
+  #' @param selected_stats vector with list of selected stats to calculate (values include: "full", "common", "robust", "five_number", "mean_sd", "mean_se", "mean_ci", "median_iqr", "median_mad", "quantile", "mean", "median", "min", "max")
+  #'
+  #' @return a df with sumstats 
+  #' @export
+  #'
+  #' @examples 
+  #' grouping_vector <- c(datastructure$Variable, datastructure$Variable2, datastructure$Variable3)
+  #'  selected_stats <- c("ci","mean", "n", "q1", "q3")
+  #'  calculate_Sumstats(long_df, datastructure, grouping_vector, selected_stats )
+  #'  
+  calculate_Sumstats(long_df, datastructure, grouping_vector, selected_stats )
+  sumstats <- long_df %>% group_by(.dots = grouping_vector)%>% 
+    get_summary_stats(datastructure[["measured"]], show = selected_stats)
+  return (sumstats)
+}
+
+
+
+
+
+Overview.Histogram<- function (long_df,datastructure, group.colors,  
+                               title = "Test", x_axis_label = "Measurement", headersize = 10, legendsize = 30,  alpha_value = 0.5) { 
+  
+  
+  
+  cohort <- datastructure$cohort
+  
+  #data in
+  data <-long_df
+  data[[cohort]] <- as.factor(data[[cohort]])
+  
+  
+  #plotting
+  p<-ggdensity(data,  x = datastructure$measured,  fill =datastructure$cohort, add = "mean", rug = TRUE )+#
+    ggtitle(title) +
+    
+    
+    theme_prism(base_size = 11, palette = "candy_bright", base_line_size = 0.5,axis_text_angle = 45, base_family = "sans")+
+    
+    xlab(x_axis_label)+
+    theme(panel.grid.minor = element_blank())+
+    scale_color_manual(values=group.colors)+
+    scale_fill_manual( values= alpha(c(group.colors),alpha_value)
+                       
+    ) 
+  return (p)
+}
+
+
+
+Overview.Plot<- function (long_df,datastructure, group.colors,  
+                          title = "Test", headersize = 10, legendsize = 30,  alpha_value = 0.5) { 
+  #for nice stats labels, rounded and styled
+  
+  
+  cohort <- datastructure$cohort
+  
+  #data in
+  data <-long_df
+  data[[cohort]] <- as.factor(data[[cohort]])
+  
+  
+  #plotting
+  p<-ggplot(data, aes(y = .data[[datastructure$Variable]], x = .data[[datastructure$measured]],  fill =.data[[datastructure$cohort]] ))+#
+    ggtitle(title) +
+    ggtitle(title) +
+    stat_boxplot() +
+    
+    
+    theme_prism(base_size = 11, palette = "candy_bright", base_line_size = 0.5,axis_text_angle = 45, base_family = "sans")+
+    theme(panel.grid.minor = element_blank())+
+    scale_color_manual(values=group.colors)+
+    scale_fill_manual( values= alpha(c(group.colors),alpha_value))+
+    
+    theme(strip.text.x=element_text(size= headersize),  legend.text=element_text(size=legendsize)) +
+    theme(axis.title.x=element_blank(),
+          # axis.text.x=element_blank(),
+          #axis.ticks.x=element_blank()
+          
+    ) 
+  
+  
+  return (p)
+}
+
+
+
+longitudinal.Plot<- function (long_df,datastructure, group.colors, sumstats, use_aggregated_data = F, 
+                              title = "Test",y_label = "Measurement", headersize = 10, legendsize = 30, x_axis_labelsize = 10,
+                              alpha_value = 0.5, pointsize = 3, dodgevalue = 0.5, stats_used = "median", show_n = F) { 
+  
+  
+  #' plotting tool to generate a lineplot, with optional stats
+  #'
+  #' @param long_df the input df
+  #' @param datastructure predefined datastructure: $cohort is x axis,  $measured is y axis, $Variable2 is color, $Variable3 is what is connected
+  #' @param group.colors colors defined by function 
+  #' @param sumstats stats defined by sumstats function
+  #' @param use_aggregated_data plot mean with errorbar or multible line plots or "Box" = Boxplot
+  #' @param title title 
+  #' @param y_label label of y axis
+  #' @param headersize size of text
+  #' @param legendsize size of legend
+  #' @param alpha_value alpha of line
+  #' @param pointsize size of dot
+  #' @param dodgevalue dodge od plots
+  #' 
+  #'
+  #' @return ggplot object
+  #' @export
+  #'
+  #' @examples longitudinal.Plot(cleaned, plateletdata,group.colors, sumstats, use_aggregated_data = F, title = "Test", y_label = "MFI", headersize = 10, legendsize = 30,  alpha_value = 0.8, pointsize = 4) 
+
+  
+  
+  pd <- position_dodge(dodgevalue)
+  
+  if (use_aggregated_data == T)
+  {
+    
+    plot <- ggplot(sumstats, aes(x=.data[[datastructure$cohort]], y=.data[[stats_used]],  colour=.data[[datastructure$Variable2]], group=.data[[datastructure$Variable3]])) + 
+      
+      geom_errorbar(aes(ymin= q1, ymax= q3, colour=.data[[datastructure$Variable2]]), alpha = 0.3, width=0.5, position=pd) +
+      #geom_errorbar(aes(ymin= (lowerCI), ymax= (upperCI), colour=.data[[datastructure$Variable2]]), alpha = 0.3, width=0.5, position=pd) +
+      
+      geom_line(position=pd) +
+      geom_point(position=pd, size=pointsize)+ 
+      scale_color_manual(values=group.colors)+
+      facet_wrap(as.formula(paste('~', datastructure$Variable)), scales = "free", ncol = 6) +
+      theme_prism(base_size = 11, palette = "candy_bright", base_line_size = 0.5,axis_text_angle = 45, base_family = "sans")+
+      theme(strip.text.x=element_text(size= headersize),  legend.text=element_text(size=legendsize),
+            axis.text.x = element_text(size=x_axis_labelsize)) +
+      theme(panel.grid.minor = element_blank())+ 
+      ylab(y_label)+
+      ggtitle(title)
+    
+    return (plot)
+  }
+  
+  if (use_aggregated_data == "Box")
+  {
+  
+  p<-ggplot(long_df, aes(x = .data[[datastructure$cohort]], y = .data[[datastructure$measured]],  fill =.data[[datastructure$Variable2]] ))+#
+    ggtitle(title) +
+   
+    stat_boxplot(aes(colour = .data[[datastructure$cohort]], fill =.data[[datastructure$Variable2]])) +
+    
+    
+    
+    theme_prism(base_size = 11, palette = "candy_bright", base_line_size = 0.5,axis_text_angle = 45, base_family = "sans")+
+    theme(panel.grid.minor = element_blank())+
+    scale_color_manual(values=group.colors)+
+    scale_fill_manual( values= alpha(c(group.colors),alpha_value))+
+
+    theme(strip.text.x=element_text(size= headersize),  legend.text=element_text(size=legendsize), 
+          axis.text.x = element_text(size=x_axis_labelsize)) +
+    theme(axis.title.x=element_blank(),
+        
+    ) +
+  
+   facet_wrap(as.formula(paste('~', datastructure$Variable)), scales = "free", ncol = 4) +  # Boxplot width can be adjusted
+    
+    geom_jitter(show.legend=FALSE, aes(color=.data[[datastructure$Variable2]]), 
+                position=position_dodge(width=0.8), 
+                size=pointsize,
+                alpha = alpha_value
+                )+
+    stat_summary(show.legend=FALSE, aes(group=.data[[datastructure$Variable2]], 
+                     color=.data[[datastructure$Variable2]]), 
+                 fun=stats_used, geom="line", 
+                 position=position_dodge(width=0.8),
+                 alpha = alpha_value
+                 ) 
+    # guides(color=FALSE, fill=FALSE)
+  
+  #display n on top of boxplot
+  if(show_n == T) {
+ p <- p + geom_text(data = sumstats, aes(x = .data[[datastructure$cohort]], y =upper_limit+1, color = .data[[datastructure$Variable2]], label = paste0("n:", n)), size= 2,check_overlap = F,
+              vjust = 0,  position=position_dodge(width=0.8)) 
+}
+   return(p)
+  
+  }
+  
+  
+  
+  
+  
+  
+  
+  plot <- ggplot(long_df, aes(x=.data[[datastructure$cohort]], y=.data[[datastructure$measured]],  colour=.data[[datastructure$Variable2]], group=interaction(.data[[datastructure$Alias]], .data[[datastructure$Variable3]]))) + 
+  
+    
+   geom_line(position=pd, alpha = alpha_value) +
+    geom_point(position=pd, size=pointsize)+ 
+    scale_color_manual(values=group.colors)+
+    facet_wrap(as.formula(paste('~', datastructure$Variable)), scales = "free", ncol = 6) +
+    theme_prism(base_size = 11, palette = "candy_bright", base_line_size = 0.5,axis_text_angle = 45, base_family = "sans")+
+    theme(strip.text.x=element_text(size= headersize),  legend.text=element_text(size=legendsize), 
+          axis.text.x = element_text(size=x_axis_labelsize)) +
+    theme(panel.grid.minor = element_blank())+ 
+    ggtitle(title)+
+    ylab(y_label)
+  
+  return(plot)
+  
+}
+
+#removes data which cannot be interpreted by stats functions
+clean_data_for_stats <- function(long_df,datastructure, selected_cohort, groupingvariables)  {
+  result <- long_df %>%
+    filter(!!sym(datastructure$cohort) %in% selected_cohort) %>%
+    group_by(across(all_of(groupingvariables))) %>%            # Group by feature and cohort
+    filter(n() >= 2) %>%                     # Ensure there are at least 2 observations
+    ungroup() %>%
+    group_by(!!sym(datastructure$Variable)) %>%
+    filter(n_distinct(!!sym(datastructure$cohort)) > 1) %>%       # Ensure feature exists in more than one cohort
+    ungroup()
+  if(nrow(result)== 0) {
+    print("empty dataframe")
+  }
+  return(result)
+}
 
 
